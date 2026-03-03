@@ -5,7 +5,7 @@ const BASE_SEPOLIA_CHAIN_ID_HEX = "0x14A34";
 
 // Placeholder ABI – replace with your deployed contract's ABI
 // which must include the `registerAgreement(string,address)` function.
-export const CONTRACT_ABI: unknown[] = [];
+export const CONTRACT_ABI: any[] = [];
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
 
