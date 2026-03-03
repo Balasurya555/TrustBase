@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   title: "TrustBase – Protect Your Agreements",
   description:
     "TrustBase helps you protect rental and legal agreements with simple, tamper-proof blockchain protection on Base Sepolia.",
+  other: {
+    "base:app_id": "69a5b0b577bc7576330f4aff",
+  },
 };
 
 export default function RootLayout({
