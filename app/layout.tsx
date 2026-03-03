@@ -1,21 +1,16 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
-  title: "TrustBase – Onchain Trust Infrastructure",
+  title: "TrustBase – Protect Your Agreements",
   description:
-    "TrustBase is an onchain trust infrastructure for real-world contracts, built on Base Sepolia.",
+    "TrustBase helps you protect rental and legal agreements with simple, tamper-proof blockchain protection on Base Sepolia.",
 };
 
 export default function RootLayout({
@@ -25,9 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0B0F17] text-slate-100`}
-      >
+      <body className={`${inter.variable} antialiased bg-[#F8FAFC] text-[#111827]`}>
         {children}
       </body>
     </html>

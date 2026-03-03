@@ -1,15 +1,18 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  baseSepoliaConstants,
   getNetworkChainId,
   isOnBaseSepolia,
   registerAgreement,
   switchToBaseSepolia,
 } from "@/lib/contract";
 import { generateSHA256 } from "@/lib/hash";
+import { Header } from "@/components/Header";
+import { UploadCard } from "@/components/UploadCard";
+import { TransactionStatus, type TxStatus } from "@/components/TransactionStatus";
+import { AnalysisPanel } from "@/components/AnalysisPanel";
+import type { AnalysisResult } from "@/app/api/analyze/route";
 
 declare global {
   interface Window {
@@ -20,8 +23,6 @@ declare global {
     };
   }
 }
-
-type TxStatus = "idle" | "pending" | "success" | "error";
 
 export default function DashboardPage() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -40,6 +41,10 @@ export default function DashboardPage() {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
 
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
   const isCorrectNetwork = useMemo(
     () => (chainId != null ? isOnBaseSepolia(chainId) : false),
     [chainId],
@@ -50,12 +55,14 @@ export default function DashboardPage() {
     [txHash],
   );
 
+  const isTenantAddressValid = useMemo(() => {
+    if (!tenantAddress) return false;
+    const pattern = /^0x[a-fA-F0-9]{40}$/;
+    return pattern.test(tenantAddress);
+  }, [tenantAddress]);
+
   const canSubmit =
-    !!walletAddress &&
-    !!fileHash &&
-    !!tenantAddress &&
-    isCorrectNetwork &&
-    txStatus !== "pending";
+    !!walletAddress && !!fileHash && isTenantAddressValid && isCorrectNetwork && txStatus !== "pending";
 
   useEffect(() => {
     async function initializeConnection() {
@@ -167,6 +174,8 @@ export default function DashboardPage() {
     setSelectedFile(file ?? null);
     setFileHash(null);
     setHashError(null);
+    setAnalysis(null);
+    setAnalysisError(null);
 
     if (!file) return;
 
@@ -206,215 +215,98 @@ export default function DashboardPage() {
     }
   };
 
+  const handleAnalyzeAgreement = async () => {
+    if (!selectedFile) {
+      setAnalysisError("Please upload your agreement first.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysis(null);
+
+    try {
+      const text = await selectedFile.text();
+      const trimmed = text.trim();
+
+      if (trimmed.length < 200) {
+        setAnalysisError(
+          "This document looks very short or unreadable. Please upload the full agreement text.",
+        );
+        setIsAnalyzing(false);
+        return;
+      }
+
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ documentText: trimmed }),
+      });
+
+      const json = (await response.json()) as {
+        success: boolean;
+        data: AnalysisResult | null;
+        error?: string;
+      };
+
+      if (!json.success || !json.data) {
+        setAnalysisError(
+          json.error ??
+            "We couldn’t analyze this document. Please try again or use a different file.",
+        );
+        setIsAnalyzing(false);
+        return;
+      }
+
+      setAnalysis(json.data);
+    } catch (error) {
+      console.error(error);
+      setAnalysisError("We couldn’t analyze this document. Please try again.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#0B0F17] text-slate-100">
-      <header className="flex items-center justify-between border-b border-slate-800/70 bg-[#020617]/60 px-6 py-4 md:px-10 md:py-5">
-        <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100">
-          <span className="h-7 w-7 rounded-lg bg-[#0052FF] text-center text-xs leading-7 text-white">
-            TB
-          </span>
-          <span className="text-sm font-semibold">TrustBase</span>
+    <div className="min-h-screen bg-[#F8FAFC]">
+      <Header walletAddress={walletAddress} isConnecting={isConnecting} onConnect={handleConnectWallet} />
+
+      <main className="flex flex-col items-center px-4 pb-12 pt-4 sm:px-6 md:px-0">
+        <div className="w-full max-w-xl">
+          <UploadCard
+            selectedFile={selectedFile}
+            onFileChange={handleFileChange}
+            isHashing={isHashing}
+            hashError={hashError}
+            onAnalyze={handleAnalyzeAgreement}
+            isAnalyzing={isAnalyzing}
+            tenantAddress={tenantAddress}
+            onTenantAddressChange={setTenantAddress}
+            isTenantAddressValid={isTenantAddressValid}
+            canSubmit={canSubmit}
+            isSubmitting={txStatus === "pending"}
+            onSubmit={handleRegisterAgreement}
+            networkError={networkError}
+            onSwitchNetwork={handleSwitchNetwork}
+            walletConnected={!!walletAddress}
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-full border border-slate-800/80 bg-[#020617]/80 px-3 py-1.5 text-[11px] text-slate-300 sm:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            <span>Base Sepolia</span>
-            <span className="font-mono text-[10px] text-slate-400">
-              {baseSepoliaConstants.chainIdDecimal}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleConnectWallet}
-            disabled={isConnecting}
-            className="inline-flex items-center justify-center rounded-full border border-[#1f2937] bg-[#020617] px-4 py-1.5 text-xs font-medium text-slate-100 shadow-sm transition hover:border-[#0052FF] hover:bg-[#020617]/80 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isConnecting
-              ? "Connecting..."
-              : walletAddress
-                ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                : "Connect Wallet"}
-          </button>
+
+        <div className="w-full max-w-xl">
+          <AnalysisPanel analysis={analysis} isLoading={isAnalyzing} error={analysisError} />
         </div>
-      </header>
 
-      <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-8 md:px-10 md:py-10 lg:flex-row">
-        <section className="w-full flex-1 space-y-5">
-          <div className="rounded-2xl border border-slate-800 bg-[#111827] p-5 shadow-lg shadow-black/40">
-            <h1 className="text-base font-semibold text-slate-50 sm:text-lg">
-              Agreement Registration
-            </h1>
-            <p className="mt-1 text-xs text-slate-400 sm:text-sm">
-              Anchor off-chain legal contracts to Base Sepolia using client-side hashing and your
-              wallet.
-            </p>
+        <div className="w-full max-w-xl mt-4">
+          <TransactionStatus status={txStatus} txHash={txHash} error={txError} />
+        </div>
 
-            <div className="mt-5 space-y-5">
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-300">
-                  1. Upload agreement (PDF)
-                </label>
-                <div className="flex items-center justify-between rounded-xl border border-dashed border-slate-700 bg-[#020617]/60 px-4 py-3">
-                  <div className="flex flex-col">
-                    <span className="text-xs text-slate-200">
-                      {selectedFile ? selectedFile.name : "Drop a PDF here or browse"}
-                    </span>
-                    <span className="text-[11px] text-slate-500">
-                      File is never uploaded. Hash is generated in your browser.
-                    </span>
-                  </div>
-                  <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-[#111827] px-3 py-1.5 text-xs font-medium text-slate-100 ring-1 ring-slate-700 hover:bg-[#1f2937]">
-                    <span>Browse</span>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
-                  </label>
-                </div>
-                {isHashing && (
-                  <p className="text-[11px] text-slate-400">Generating SHA-256 hash…</p>
-                )}
-                {fileHash && (
-                  <div className="mt-2 space-y-1 rounded-xl border border-slate-700 bg-[#020617]/60 px-3 py-2">
-                    <p className="text-[11px] font-medium text-slate-300">
-                      SHA-256 hash (hex)
-                    </p>
-                    <p className="break-all font-mono text-[11px] text-slate-100">{fileHash}</p>
-                  </div>
-                )}
-                {hashError && <p className="text-[11px] text-red-400">{hashError}</p>}
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-300">
-                  2. Tenant wallet address
-                </label>
-                <input
-                  type="text"
-                  value={tenantAddress}
-                  onChange={(event) => setTenantAddress(event.target.value)}
-                  placeholder="0x..."
-                  className="w-full rounded-xl border border-slate-700 bg-[#020617] px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-[#0052FF] focus:outline-none focus:ring-1 focus:ring-[#0052FF]"
-                />
-                <p className="text-[11px] text-slate-500">
-                  This should be the on-chain address of the tenant or counterparty.
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={handleRegisterAgreement}
-                  disabled={!canSubmit}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#0052FF] px-4 py-2.5 text-sm font-medium text-white shadow-md shadow-blue-500/25 transition hover:bg-[#2563eb] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {txStatus === "pending" ? "Registering on Base…" : "Register on Base"}
-                </button>
-                <p className="text-[11px] text-slate-500">
-                  You will be asked to sign a transaction with your connected wallet. Gas is paid on
-                  Base Sepolia.
-                </p>
-              </div>
-            </div>
+        {walletError && (
+          <div className="mx-auto mt-4 w-full max-w-xl rounded-2xl bg-white p-4 text-xs text-[#B91C1C] shadow-lg">
+            {walletError}
           </div>
-        </section>
-
-        <section className="w-full flex-1 space-y-5">
-          <div className="rounded-2xl border border-slate-800 bg-[#020617]/80 p-5 shadow-lg shadow-black/40">
-            <h2 className="text-sm font-semibold text-slate-50">Session & Network Status</h2>
-            <div className="mt-3 space-y-3 text-xs text-slate-300">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Wallet</span>
-                <span className="font-mono text-[11px]">
-                  {walletAddress
-                    ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                    : "Not connected"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Network</span>
-                <span className="font-mono text-[11px]">
-                  {chainId != null ? `Chain ID ${chainId}` : "Unknown"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">Target</span>
-                <span className="font-mono text-[11px] text-emerald-400">
-                  Base Sepolia ({baseSepoliaConstants.chainIdDecimal})
-                </span>
-              </div>
-            </div>
-
-            {networkError && (
-              <div className="mt-4 space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                <p className="text-[11px] font-medium text-amber-200">Wrong network detected</p>
-                <p className="text-[11px] text-amber-100/80">{networkError}</p>
-                <button
-                  type="button"
-                  onClick={handleSwitchNetwork}
-                  className="mt-2 inline-flex items-center justify-center rounded-full bg-amber-400 px-3 py-1 text-[11px] font-semibold text-amber-950 hover:bg-amber-300"
-                >
-                  Switch to Base Sepolia
-                </button>
-              </div>
-            )}
-
-            {walletError && (
-              <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-100">
-                {walletError}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-[#020617]/80 p-5 shadow-lg shadow-black/40">
-            <h2 className="text-sm font-semibold text-slate-50">Transaction Status</h2>
-            <div className="mt-3 space-y-2 text-xs text-slate-300">
-              {txStatus === "idle" && (
-                <p className="text-slate-400">
-                  No transaction yet. Fill in the details and click{" "}
-                  <span className="font-semibold text-slate-100">Register on Base</span> to begin.
-                </p>
-              )}
-              {txStatus === "pending" && (
-                <p className="text-slate-300">
-                  Transaction submitted. Waiting for confirmation on Base Sepolia…
-                </p>
-              )}
-              {txStatus === "success" && txHash && (
-                <div className="space-y-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
-                  <p className="text-[11px] font-semibold text-emerald-200">
-                    Agreement successfully registered on Base Sepolia.
-                  </p>
-                  <p className="text-[11px] text-emerald-100/90">
-                    Transaction hash:
-                    <br />
-                    <span className="break-all font-mono text-[11px]">{txHash}</span>
-                  </p>
-                  {explorerUrl && (
-                    <a
-                      href={explorerUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center rounded-full bg-emerald-400 px-3 py-1 text-[11px] font-semibold text-emerald-950 hover:bg-emerald-300"
-                    >
-                      View on BaseScan
-                    </a>
-                  )}
-                </div>
-              )}
-              {txStatus === "error" && txError && (
-                <div className="space-y-1 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2">
-                  <p className="text-[11px] font-semibold text-red-200">
-                    Transaction failed or was rejected.
-                  </p>
-                  <p className="text-[11px] text-red-100/90 break-words">{txError}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+        )}
       </main>
     </div>
   );
